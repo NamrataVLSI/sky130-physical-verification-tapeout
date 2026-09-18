@@ -28,14 +28,14 @@ From the symbol selection window, the SKY130 primitive device library was access
 /usr/share/pdk/sky130A/libs.tech/xschem/sky130_fd_pr
 ```
 
-![SKY130 Symbol Library](images/01_symbol_library.png)
+![SKY130 Symbol Library](../images/01_symbol_library.png)
 
 The following MOSFET symbols were selected:
 
 - `nfet_01v8.sym` — NMOS transistor
 - `pfet3_01v8.sym` — PMOS transistor
 
-![SKY130 MOSFET Devices](images/02_sky130_devices.png)
+![SKY130 MOSFET Devices](../images/02_sky130_devices.png)
 
 The PMOS was placed at the top and the NMOS at the bottom to form the basic CMOS inverter structure.
 
@@ -77,7 +77,7 @@ The following connections were made:
 
 This creates the standard CMOS inverter topology.
 
-![CMOS Inverter Wiring](images/03_inverter_wiring.png)
+![CMOS Inverter Wiring](../images/03_inverter_wiring.png)
 
 ---
 
@@ -101,7 +101,7 @@ where:
 - `nf` — Number of fingers
 - `mult` — Device multiplier
 
-![NMOS Properties](images/04_nmos_properties.png)
+![NMOS Properties](../images/04_nmos_properties.png)
 
 ---
 
@@ -118,7 +118,7 @@ mult=1
 body=VDD
 ```
 
-![PMOS Properties](images/05_pmos_properties.png)
+![PMOS Properties](../images/05_pmos_properties.png)
 
 ---
 
@@ -131,7 +131,7 @@ Its basic operation is:
 - When `IN = LOW`, the PMOS turns ON and pulls `OUT` toward `VDD`.
 - When `IN = HIGH`, the NMOS turns ON and pulls `OUT` toward `VSS`.
 
-![Final CMOS Inverter Schematic](images/06_final_inverter.png)
+![Final CMOS Inverter Schematic](../images/06_final_inverter.png)
 
 ---
 
