@@ -1,147 +1,90 @@
-# L4 — Creating Symbol and Exporting Schematic in Xschem
+# L4 — Inverter Symbol Creation, Testbench & Functional Verification
 
-## Objective
+## Overview
 
-The objective of this lab was to convert the transistor-level CMOS inverter schematic into a reusable hierarchical symbol, create a separate testbench, generate a SPICE netlist, and functionally verify the inverter using **ngspice**.
+In this lab, I converted the transistor-level SKY130 CMOS inverter developed in the previous stage into a reusable hierarchical Xschem symbol and built a separate testbench for functional verification.
 
-The schematic was also configured to generate a hierarchical `.subckt` netlist for later **Layout Versus Schematic (LVS)** verification.
+The inverter was simulated using **ngspice** with the **SKY130 TT device models** and a 1.8 V supply. During simulation, I encountered a hierarchical net-connectivity issue where the expected `OUT` node was not recognized by ngspice. I debugged the generated node connectivity, corrected the testbench/symbol connections, and successfully obtained the expected inverter transient response.
 
-The overall flow was:
+The schematic was then configured to generate a top-level `.subckt` netlist for subsequent LVS verification.
+
+---
+
+## Design Flow
 
 ```text
-CMOS Inverter Schematic
-        ↓
-Create Inverter Symbol
-        ↓
-Instantiate Symbol in Testbench
-        ↓
-Connect VDD, VIN and VSS
-        ↓
-Include SKY130 Device Models
-        ↓
-Configure Transient Analysis
-        ↓
+Transistor-Level Inverter
+          ↓
+Generate Hierarchical Symbol
+          ↓
+Create Simulation Testbench
+          ↓
+Apply VDD + PWL Input
+          ↓
+Include SKY130 TT Models
+          ↓
 Generate SPICE Netlist
-        ↓
-Run ngspice Simulation
-        ↓
-Verify VIN / VOUT
-        ↓
-Prepare .subckt Netlist for LVS
+          ↓
+Transient Simulation
+          ↓
+Debug Net Connectivity
+          ↓
+Functional Verification
+          ↓
+Generate LVS-Ready .subckt
 ```
 
 ---
 
-## 1. Creating a Symbol from the Inverter Schematic
+## 1. Hierarchical Inverter Symbol
 
-The CMOS inverter created in the previous lab contains a PMOS and NMOS with four external connections:
-
-- `IN`
-- `OUT`
-- `VDD`
-- `VSS`
-
-Instead of recreating the transistor-level schematic every time the inverter is used, Xschem can generate a reusable symbol from the schematic.
-
-From the inverter schematic, I selected:
-
-```text
-Symbol → Make symbol from schematic
-```
-
-![Creating symbol from schematic](images/01_create_symbol_from_schematic.png)
-
-This generated:
-
-```text
-inverter.sym
-```
-
-The symbol provides a hierarchical representation of the transistor-level inverter.
-
----
-
-## 2. Generated Inverter Symbol
-
-The generated inverter symbol exposes the external terminals of the original schematic:
+The transistor-level inverter schematic contains four external terminals:
 
 ```text
 IN
-VDD
 OUT
+VDD
 VSS
 ```
 
-The symbol can now be instantiated inside another schematic while the actual PMOS/NMOS implementation remains inside `inverter.sch`.
+I generated a hierarchical symbol directly from the completed inverter schematic using Xschem.
+
+![Creating symbol from schematic](images/01_create_symbol_from_schematic.png)
+
+The generated `inverter.sym` encapsulates the transistor-level implementation while exposing only the required external connections.
 
 ![Generated inverter symbol](images/02_generated_inverter_symbol.png)
 
-This introduced the concept of **hierarchical schematic design**:
-
-```text
-Testbench
-   │
-   └── inverter.sym
-           │
-           └── inverter.sch
-                   │
-                   ├── PMOS
-                   └── NMOS
-```
-
-The symbol therefore acts as the interface to the underlying transistor-level circuit.
+This allowed the inverter to be reused as a single circuit block in the simulation testbench while preserving the underlying PMOS/NMOS schematic hierarchy.
 
 ---
 
-## 3. Creating the Inverter Testbench
+## 2. Testbench Development
 
-A new Xschem schematic was created to functionally test the inverter.
+I created a separate Xschem testbench and instantiated the generated inverter symbol.
 
-The inverter symbol was instantiated in the testbench and voltage sources were added using:
+Two voltage sources were used:
 
-```text
-vsource.sym
-```
+- **Supply:** `VDD = 1.8 V`
+- **Input stimulus:** PWL source from 0 V to 1.8 V
+
+The voltage sources were instantiated using `vsource.sym`.
 
 ![Adding voltage source](images/03_add_voltage_source.png)
 
-Two voltage sources were required:
-
-### Supply voltage
-
-The SKY130 low-voltage MOS devices used in the inverter operate with a nominal supply of:
-
-```text
-VDD = 1.8 V
-```
-
-### Input stimulus
-
-The second voltage source drives the inverter input using a Piecewise Linear (PWL) waveform:
+The input stimulus used was:
 
 ```spice
 PWL(0 0 20n 0 900n 1.8)
 ```
 
-This means:
-
-```text
-0 ns      → 0 V
-20 ns     → 0 V
-900 ns    → 1.8 V
-```
-
-Therefore, the input initially remains at 0 V and then gradually ramps toward 1.8 V.
-
-This allows the switching behavior of the CMOS inverter to be observed during transient simulation.
+This provided a gradual input transition across the full 0–1.8 V operating range, allowing the inverter switching behavior to be observed during transient analysis.
 
 ---
 
-## 4. Including the SKY130 ngspice Device Models
+## 3. SKY130 Model Setup
 
-The transistor symbols in the schematic describe the circuit connectivity, but ngspice also requires the electrical device models supplied by the SKY130 PDK.
-
-A `code_shown.sym` block was added with:
+The SKY130 ngspice device models were included in the testbench using:
 
 ```spice
 .lib /usr/share/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
@@ -149,21 +92,13 @@ A `code_shown.sym` block was added with:
 
 ![SKY130 ngspice model library](images/04_sky130_model_library.png)
 
-The `.lib` statement loads the SKY130 transistor model library.
-
-The:
-
-```text
-tt
-```
-
-option selects the **Typical-Typical (TT)** process corner for the simulation.
+The simulation was performed using the **Typical-Typical (`tt`) process corner**.
 
 ---
 
-## 5. Configuring Transient Analysis
+## 4. Transient Analysis Setup
 
-A second `code_shown.sym` block was used to define the ngspice transient simulation.
+Transient analysis was configured using:
 
 ```spice
 .control
@@ -174,182 +109,101 @@ plot V(IN) V(OUT)
 
 ![Transient simulation control block](images/05_transient_control_setup.png)
 
-### Simulation parameters
+The simulation used a **1 ns time step** over a total duration of **1 µs**, while monitoring both the input and output voltages.
 
-`tran 1n 1u` specifies:
-
-```text
-Simulation step = 1 ns
-Stop time       = 1 µs
-```
-
-The following command plots both the inverter input and output:
-
-```spice
-plot V(IN) V(OUT)
-```
-
-This allows the input transition and corresponding inverter response to be viewed together.
-
----
-
-## 6. Completed Inverter Testbench
-
-The completed testbench contains:
-
-- Hierarchical inverter symbol
-- 1.8 V VDD source
-- PWL input voltage source
-- Ground connection
-- `IN` net
-- `OUT` net
-- SKY130 ngspice model library
-- Transient simulation commands
+The completed testbench contained the hierarchical inverter, VDD source, PWL input source, ground connection, SKY130 model inclusion, and transient-analysis commands.
 
 ![Complete inverter testbench](images/06_complete_inverter_testbench.png)
 
-The resulting simulation flow is:
-
-```text
-PWL Voltage Source
-       │
-       ▼
-      IN
-       │
-       ▼
- ┌───────────┐
- │  Inverter │
- └───────────┘
-       │
-       ▼
-      OUT
-       │
-       ▼
-Transient Waveform
-```
-
 ---
 
-## 7. Functional Verification Using ngspice
+## 5. Issue Encountered — Output Node Not Recognized
 
-After completing the testbench, the schematic was netlisted and simulated using ngspice.
-
-The final transient simulation successfully produced both:
-
-```text
-V(IN)
-V(OUT)
-```
-
-![Inverter transient simulation result](images/07_transient_simulation_result.png)
-
-### Simulation Result
-
-The red waveform represents:
-
-```text
-V(IN)
-```
-
-and gradually increases from approximately:
-
-```text
-0 V → 1.8 V
-```
-
-The blue waveform represents:
-
-```text
-V(OUT)
-```
-
-and initially remains near:
-
-```text
-1.8 V
-```
-
-When the input enters the inverter switching region, the output rapidly transitions toward:
-
-```text
-0 V
-```
-
-Therefore:
-
-```text
-VIN LOW  → VOUT HIGH
-VIN HIGH → VOUT LOW
-```
-
-This confirms the expected logical behavior of the CMOS inverter.
-
----
-
-## 8. Simulation Debugging
-
-During the initial simulation, transient analysis completed successfully, but ngspice reported:
+During the first simulation attempts, the transient analysis executed, but ngspice reported:
 
 ```text
 Error: no such vector out
 ```
 
-The generated node list initially contained automatically generated nodes such as:
-
-```text
-net1
-net2
-```
-
-instead of the expected:
+Instead of showing the expected nodes:
 
 ```text
 IN
 OUT
 ```
 
-`net1` was identified as the VDD rail because it remained at 1.8 V.
+the ngspice node list contained automatically generated nodes such as:
 
-This indicated that the issue was not with the transient analysis itself, but with the hierarchical net/pin connectivity between the inverter schematic, generated symbol, and testbench.
+```text
+net1
+net2
+```
 
-After checking the symbol connectivity and correcting the testbench net connections, the netlist correctly recognized:
+I initially verified `net1` and found that it remained at **1.8 V**, confirming that it corresponded to the VDD rail rather than the inverter output.
+
+This indicated that the problem was not with the transient-analysis command itself. The issue was associated with **hierarchical pin/net connectivity between the inverter schematic, generated symbol, and testbench**.
+
+### Debugging Approach
+
+I checked:
+
+- `IN`, `OUT`, `VDD`, and `VSS` connections in the transistor-level schematic
+- Pin definitions in the generated inverter symbol
+- Testbench wiring between the voltage sources and inverter symbol
+- Input/output net naming
+- Nodes recognized by the generated ngspice netlist
+
+After correcting the hierarchical connectivity and regenerating the netlist, ngspice correctly recognized:
 
 ```text
 in
 out
+net1
 ```
 
-The simulation then successfully generated both input and output waveforms.
+with `net1` representing the 1.8 V supply rail.
 
-### Debugging Takeaway
+This resolved the:
 
-A schematic can appear visually connected while the generated SPICE netlist does not contain the expected node names.
+```text
+no such vector out
+```
 
-When debugging this type of issue, checking the **ngspice node list and generated netlist** helps distinguish between:
-
-- simulation-command errors,
-- model errors,
-- and schematic/net connectivity errors.
+error and allowed the intended output waveform to be plotted.
 
 ---
 
-## 9. Preparing the Schematic for LVS
+## 6. Functional Verification
 
-After functional verification, the inverter schematic was configured for later Layout Versus Schematic verification.
+After resolving the connectivity issue, the transient simulation completed successfully.
 
-In Xschem:
+![Inverter transient simulation result](images/07_transient_simulation_result.png)
+
+The final waveform shows the expected CMOS inverter behavior:
+
+| Input | Output |
+|---|---|
+| `VIN ≈ 0 V` | `VOUT ≈ 1.8 V` |
+| `VIN ↑` | `VOUT ↓` |
+| `VIN ≈ 1.8 V` | `VOUT ≈ 0 V` |
+
+The input voltage increases from **0 V to 1.8 V**, while the output initially remains near **1.8 V** and then transitions sharply toward **0 V** as the input crosses the inverter switching region.
+
+This successfully verified the logical inversion behavior of the SKY130 CMOS inverter before proceeding to physical layout verification.
+
+---
+
+## 7. LVS Netlist Preparation
+
+After functional verification, I configured Xschem to generate the inverter as a top-level SPICE subcircuit by enabling:
 
 ```text
 Simulation → LVS netlist: Top level is a .subckt
 ```
 
-was enabled.
-
 ![LVS top-level subcircuit setting](images/08_lvs_subckt_setting.png)
 
-With this option enabled, Xschem generates the top-level schematic as a SPICE subcircuit.
-
-Conceptually, the resulting netlist contains:
+The generated schematic netlist is therefore represented hierarchically using:
 
 ```spice
 .subckt inverter ...
@@ -357,51 +211,46 @@ Conceptually, the resulting netlist contains:
 .ends inverter
 ```
 
-rather than treating the inverter as a complete standalone simulation circuit.
-
-### Why `.subckt` is important
-
-A subcircuit provides a reusable hierarchical representation of the inverter.
-
-This becomes important during LVS because the schematic representation of the inverter can be compared against the corresponding netlist extracted from its physical layout.
-
-It also allows the inverter to be instantiated as a building block inside larger designs.
+This provides the schematic-side subcircuit required for the later **Layout Versus Schematic (LVS)** comparison with the netlist extracted from the Magic layout.
 
 ---
 
-## Key Results
+## Results
 
-- Created a reusable hierarchical symbol from the transistor-level CMOS inverter schematic.
-- Instantiated the inverter symbol inside a separate Xschem testbench.
-- Configured a **1.8 V** supply for the SKY130 low-voltage devices.
-- Applied a **PWL input stimulus** from 0 V to 1.8 V.
-- Loaded the SKY130 ngspice models using the **TT process corner**.
-- Configured and executed transient analysis using ngspice.
-- Successfully observed complementary `V(IN)` and `V(OUT)` waveforms.
-- Debugged a hierarchical output-net connectivity issue using the ngspice node list.
-- Configured Xschem to export the inverter as a top-level `.subckt` for subsequent LVS verification.
+| Item | Result |
+|---|---|
+| CMOS inverter symbol | Successfully generated |
+| Hierarchical testbench | Completed |
+| Supply voltage | 1.8 V |
+| Input stimulus | PWL, 0–1.8 V |
+| SKY130 model corner | TT |
+| Transient analysis | 1 ns step, 1 µs duration |
+| Input/output simulation | Passed |
+| Hierarchical net issue | Debugged and resolved |
+| LVS schematic netlist | Configured as `.subckt` |
 
 ---
 
-## Final Result
+## Key Learnings
 
-The CMOS inverter was successfully converted into a reusable hierarchical block and functionally validated before physical layout implementation.
+- Created and reused a **hierarchical Xschem symbol** from a transistor-level schematic.
+- Built an independent testbench for pre-layout functional verification.
+- Used the **SKY130 ngspice TT models** for transistor-level simulation.
+- Configured and analyzed transient inverter behavior.
+- Learned that visually correct schematic wiring does not necessarily guarantee correct SPICE net naming across hierarchy.
+- Used the **ngspice node list** to distinguish the VDD rail from the missing output node and isolate the connectivity issue.
+- Successfully verified the expected complementary `VIN`/`VOUT` behavior.
+- Prepared the schematic as a hierarchical `.subckt` for the upcoming LVS flow.
+
+---
+
+## Final Status
+
+**Functional Verification: PASS**
 
 ```text
-Schematic
-   ✓
-Symbol
-   ✓
-Testbench
-   ✓
-SPICE Netlist
-   ✓
-Transient Simulation
-   ✓
-Functional Verification
-   ✓
-LVS-ready .subckt
-   ✓
+VIN:   0 V  ───────────────→  1.8 V
+VOUT:  1.8 V ──────────────→  0 V
 ```
 
-The next stage is to use the generated schematic/netlist information for physical layout and verification in Magic.
+The inverter is functionally verified and the schematic netlist is prepared for the next stage of the physical verification flow.
