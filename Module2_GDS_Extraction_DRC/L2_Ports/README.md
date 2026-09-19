@@ -2,13 +2,11 @@
 
 ## Overview
 
-In this lab, I investigated how ports are represented when a SKY130 standard-cell layout is imported into Magic from GDS.
+In this lab, I investigated how port information is represented when a SKY130 standard-cell layout is imported into Magic from GDS.
 
-The main issue explored was that **GDS preserves physical geometry and labels, but does not contain all of the metadata required to completely describe a standard-cell interface**.
+The GDS layout contains the physical geometry and labels of the standard cell, but some information required to fully describe the cell interface is not preserved as part of the GDS representation.
 
-After reading the SKY130 standard-cell GDS, Magic could identify ports, but information such as port class, port use, and the vendor-defined port ordering was either missing or assigned automatically.
-
-I used the vendor **LEF** and **SPICE** libraries to annotate the imported GDS layout with this missing information.
+I therefore compared the port information initially available from the GDS against the vendor SPICE definition, then used the SKY130 LEF and SPICE data to annotate the layout with additional metadata and recover the vendor-defined port ordering.
 
 The overall flow was:
 
@@ -17,67 +15,138 @@ SKY130 Standard-Cell GDS
         ↓
 Inspect Existing Ports
         ↓
-Query Port Index / Name / Class / Use
+Query Port Index
+        ↓
+Observe Ambiguous Label Selection
+        ↓
+Inspect Port Name / Class / Use
         ↓
 Compare Against Vendor SPICE
         ↓
-Identify Incorrect Port Ordering
+Identify Port-Order Difference
         ↓
 Read Vendor LEF
         ↓
-Recover Port Class / Use Metadata
+Recover Port Class / Use
         ↓
-Read Vendor SPICE Metadata
+Annotate Using Vendor SPICE
         ↓
-Recover Vendor Port Ordering
-        ↓
-Verify Correct Port Definition
+Recover Correct Port Order
 ```
 
 ---
 
-## 1. Inspecting Ports in the Imported Layout
+## 1. Inspecting Ports in the GDS Layout
 
-I continued with the SKY130 standard-cell library imported in the previous lab and inspected:
+I continued working with the SKY130 standard cell:
 
 ```text
 sky130_fd_sc_hd__and2_1
 ```
 
-Magic allows information about a selected port label to be queried using:
+After reading the standard-cell GDS into Magic, the layout already contained visible labels corresponding to signals such as:
+
+```text
+A
+B
+X
+VPWR
+VGND
+```
+
+I started by investigating how Magic associates these labels with ports.
+
+---
+
+## 2. Querying a Single Port
+
+Magic provides:
 
 ```tcl
 port index
 ```
 
-For example, selecting the `X` output label and running:
+to return the index associated with the selected port.
+
+I selected a single `X` label and executed:
 
 ```tcl
 port index
 ```
 
-returned its assigned port index.
+Magic returned:
 
-![Port index query](images/01_port_index_query.png)
+```text
+3
+```
 
-One limitation of this method is that exactly one label must be selected.
+![Single port index query](images/01_single_port_index_query.png)
 
-When multiple overlapping labels were selected, Magic reported:
+This confirmed that when exactly one port label is selected, Magic can directly return the port index assigned to that label.
+
+In this case:
+
+```text
+Selected label → X
+Magic port index → 3
+```
+
+However, this index was Magic's current port assignment and did not yet prove that the ordering matched the vendor SPICE definition.
+
+---
+
+## 3. Multiple / Overlapping Port Labels
+
+I then encountered a limitation of querying ports directly from the layout.
+
+Some locations contain multiple or overlapping labels. If more than one label is selected and I execute:
+
+```tcl
+port index
+```
+
+Magic cannot determine which port is being requested.
+
+![Multiple port selection error](images/02_multiple_port_selection_error.png)
+
+The console reported:
 
 ```text
 Exactly one label may be present under the cursor box.
 Use "port <name> ..." to specify a unique port.
 ```
 
-This made direct graphical inspection difficult for locations containing overlapping labels.
+This demonstrated the difference between the two cases:
+
+```text
+Exactly one label selected
+        ↓
+port index
+        ↓
+Port index returned successfully
+```
+
+versus:
+
+```text
+Multiple / overlapping labels selected
+        ↓
+port index
+        ↓
+Ambiguous selection
+        ↓
+Specify a unique port explicitly
+```
+
+This became especially relevant for supply labels, where multiple labels can visually overlap.
+
+Instead of relying only on graphical selection, I used Magic's indexed port-query commands to inspect the ports systematically.
 
 ---
 
-## 2. Querying Ports by Index
+## 4. Inspecting Ports by Index
 
-A more reliable way to inspect the complete port definition was to query ports directly from the Magic console.
-
-I first used:
+I used:
 
 ```tcl
 port first
@@ -85,13 +154,13 @@ port first
 
 to determine the first numbered port.
 
-The returned index was:
+Magic returned:
 
 ```text
 1
 ```
 
-Individual properties could then be queried using:
+I could then query information about that port using:
 
 ```tcl
 port 1 name
@@ -99,21 +168,21 @@ port 1 class
 port 1 use
 ```
 
-Initially, Magic reported the port name but the additional metadata appeared as:
+Initially, properties such as port class and use were reported as:
 
 ```text
 default
 ```
 
-for properties such as port class and use.
+This indicated that the imported GDS did not provide all of the metadata needed to fully describe the function of each port.
 
-This demonstrated that the GDS representation alone did not provide all of the interface metadata expected for the standard cell.
+More importantly, the port numbering assigned by Magic needed to be compared against the vendor's electrical definition.
 
 ---
 
-## 3. Checking the Vendor SPICE Definition
+## 5. Checking the Vendor SPICE Library
 
-Because the port order generated by Magic was not guaranteed to match the vendor definition, I inspected the SKY130 standard-cell SPICE library.
+To determine the authoritative electrical port order, I inspected the SKY130 vendor SPICE library.
 
 I navigated to:
 
@@ -121,29 +190,31 @@ I navigated to:
 cd /usr/share/pdk/sky130A/libs.ref/sky130_fd_sc_hd/spice
 ```
 
-and inspected:
+and inspected the available files.
 
-```text
-sky130_fd_sc_hd.spice
+![SKY130 vendor SPICE library](images/03_vendor_spice_library.png)
+
+I opened:
+
+```bash
+vi sky130_fd_sc_hd.spice
 ```
 
-![SKY130 vendor SPICE library](images/02_vendor_spice_library.png)
+and searched for the `AND2_1` standard-cell definition.
 
-I located the subcircuit definition for:
+---
 
-```text
-sky130_fd_sc_hd__and2_1
-```
+## 6. Vendor-Defined AND2 Port Order
 
-The vendor SPICE file defined the cell as:
+The vendor SPICE library contained the subcircuit definition:
 
 ```spice
 .subckt sky130_fd_sc_hd__and2_1 A B VGND VNB VPB VPWR X
 ```
 
-![Vendor AND2 port order](images/03_vendor_and2_port_order.png)
+![Vendor AND2 port order](images/04_vendor_and2_port_order.png)
 
-Therefore, the vendor-defined port order was:
+Therefore, the vendor-defined order is:
 
 ```text
 1 → A
@@ -155,58 +226,59 @@ Therefore, the vendor-defined port order was:
 7 → X
 ```
 
-This is important because the ordering of nodes in a SPICE `.subckt` definition determines how a hierarchical instance is electrically connected.
+This exposed an important problem.
+
+Before annotation, Magic reported a different first port. The port order generated from the GDS therefore did not match the order defined by the vendor SPICE model.
+
+The vendor SPICE definition must be treated as the electrical reference because hierarchical SPICE connectivity depends on the order of the terminals in the `.subckt` definition.
 
 ---
 
-## 4. Identifying the Port-Order Problem
+## 7. Why GDS Alone Was Not Enough
 
-Before annotation, Magic assigned its own port ordering after reading the GDS.
+The experiment demonstrated that the GDS representation provided the physical cell layout but did not provide all of the metadata required to reconstruct the complete vendor interface.
 
-For example, querying:
-
-```tcl
-port first
-port 1 name
-```
-
-did not initially identify `A` as the first port.
-
-However, the vendor SPICE definition clearly specified:
-
-```spice
-.subckt sky130_fd_sc_hd__and2_1 A B VGND VNB VPB VPWR X
-```
-
-with:
+In particular, I needed additional information for:
 
 ```text
-A
+Port class
+Port use
+Vendor-defined port order
 ```
 
-as the first terminal.
+The different library views provide complementary information:
 
-This showed that the automatically generated Magic port ordering did not reproduce the vendor's intended SPICE port order.
+```text
+GDS
+ │
+ └── Detailed physical geometry + labels
 
-The underlying reason is that the required port-order metadata is not inherently available from the GDS representation being read.
+LEF
+ │
+ └── Port / interface metadata
+
+SPICE
+ │
+ └── Electrical connectivity + subcircuit port order
+```
+
+Therefore, the complete standard-cell representation required information from more than the GDS file alone.
 
 ---
 
-## 5. Annotating the Layout with LEF Metadata
+## 8. Annotating the Existing Layout Using LEF
 
-The SKY130 library also provides a LEF representation containing additional physical interface information.
+The SKY130 standard-cell library also provides a LEF representation.
 
-I loaded the vendor LEF using:
+I read the LEF file using:
 
 ```tcl
 lef read /usr/share/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef
 ```
 
-Magic detected that the cells already existed in memory.
+Because the detailed GDS cells were already loaded into Magic, the matching LEF macros were used to annotate the existing cells rather than simply replacing them with abstract layouts.
 
-Instead of replacing the detailed GDS layouts with LEF abstract views, Magic used the matching LEF macros to **annotate the existing cells**.
-
-After LEF annotation, I repeated:
+After reading the LEF, I queried the port information again:
 
 ```tcl
 port 1 name
@@ -214,170 +286,160 @@ port 1 use
 port 1 class
 ```
 
-![LEF and SPICE port annotation](images/04_lef_spice_port_annotation.png)
+![LEF and SPICE port annotation](images/05_lef_spice_port_annotation.png)
 
-The port now contained additional metadata.
+The additional metadata now contained meaningful information.
 
-For example, the power port could be identified with information such as:
+For example:
 
 ```text
 use   → power
 class → bidirectional
 ```
 
-instead of the original generic:
+instead of:
 
 ```text
 default
 ```
 
-This demonstrated how LEF supplements information that is missing from the GDS representation.
+This confirmed that LEF could provide port metadata that was missing from the GDS import.
 
 ---
 
-## 6. What LEF Fixed — and What It Did Not
+## 9. What LEF Corrected
 
-Reading the LEF improved the port metadata by supplying information such as:
+After LEF annotation, Magic had more information about what the ports represented.
 
-```text
-port use
-port class
-```
-
-However, it did **not** correct the vendor SPICE port ordering.
-
-The first Magic port still did not necessarily correspond to the first port in the vendor `.subckt` definition.
-
-Therefore:
+For example, the library could distinguish information such as:
 
 ```text
-GDS
- ↓
-geometry + labels
-
-LEF
- ↓
-physical interface metadata
-(port class/use)
-
-SPICE/CDL
- ↓
-electrical connectivity
-+ authoritative subcircuit port order
+signal
+power
+ground
 ```
 
-All three representations contribute different information about the same standard cell.
+through the corresponding port metadata.
 
----
+However, the vendor-defined **port ordering** was still a separate issue.
 
-## 7. Annotating Port Order from SPICE
-
-To recover the correct vendor-defined port order, I used the provided Magic Tcl procedure:
-
-```tcl
-readspice
-```
-
-with the SKY130 standard-cell SPICE library.
-
-Conceptually, this uses the SPICE `.subckt` definitions to annotate the existing Magic cells with the correct terminal ordering.
-
-After applying the SPICE annotation, I returned to the `AND2_1` cell and queried:
-
-```tcl
-port first
-```
-
-followed by:
-
-```tcl
-port 1 name
-```
-
-![Corrected port order](images/05_corrected_port_order.png)
-
-The result now showed:
-
-```text
-port first
-→ 1
-
-port 1 name
-→ A
-```
-
-This matched the vendor SPICE definition:
+The first port still needed to match the electrical interface defined by:
 
 ```spice
 .subckt sky130_fd_sc_hd__and2_1 A B VGND VNB VPB VPWR X
 ```
 
-The SPICE-based annotation therefore restored the intended port ordering.
+The required ordering information was therefore obtained from the SPICE representation.
 
 ---
 
-## 8. Verifying the Port Information
+## 10. Annotating Port Order from SPICE
 
-I also used graphical port selection together with:
+I used the provided Magic Tcl `readspice` procedure to annotate the loaded cells using the SKY130 SPICE library.
+
+This allowed Magic to associate the port ordering with the corresponding vendor `.subckt` definitions.
+
+After performing the SPICE annotation, I returned to the `AND2_1` cell and checked:
 
 ```tcl
-port index
+port first
 ```
 
-to inspect the port assignment directly on the physical cell.
-
-![Port index verification](images/06_port_index_verification.png)
-
-This connected the physical labels visible in the Magic layout with their electrical port definitions.
-
----
-
-## Metadata Across GDS, LEF and SPICE
-
-A major takeaway from this lab was understanding why a physical-verification flow often requires multiple representations of the same library.
-
-| File | Information used in this lab |
-|---|---|
-| **GDS** | Detailed physical geometry and labels |
-| **LEF** | Interface/port metadata such as use and class |
-| **SPICE/CDL** | Electrical connectivity and authoritative subcircuit port order |
-
-The complete cell representation therefore comes from combining information from multiple sources:
+Magic returned:
 
 ```text
-             GDS
-              │
-        Physical Geometry
-              │
-              ▼
-        ┌───────────┐
-LEF ───►│   Magic   │◄─── SPICE
-        └───────────┘
-   Port metadata       Port order /
-   class + use         connectivity
+1
 ```
+
+I then queried:
+
+```tcl
+port 1 name
+```
+
+and obtained:
+
+```text
+A
+```
+
+![Corrected port order](images/06_corrected_port_order.png)
+
+This now matched the vendor definition:
+
+```spice
+.subckt sky130_fd_sc_hd__and2_1 A B VGND VNB VPB VPWR X
+```
+
+Therefore:
+
+```text
+Vendor SPICE first port → A
+Magic first port after annotation → A
+```
+
+The port annotation was successful.
 
 ---
 
-## Issue Encountered
+## GDS + LEF + SPICE Relationship
 
-### Ambiguous Port Selection
+This lab helped clarify the role of the different standard-cell views.
 
-When querying:
+| Library View | Information Used |
+|---|---|
+| **GDS** | Detailed physical geometry and labels |
+| **LEF** | Port/interface metadata such as class and use |
+| **SPICE/CDL** | Electrical connectivity and vendor subcircuit port order |
+
+Together:
+
+```text
+                  GDS
+                   │
+                   │ Physical geometry
+                   ▼
+             ┌───────────┐
+             │   Magic   │
+             └───────────┘
+               ▲       ▲
+               │       │
+        LEF ───┘       └─── SPICE
+        │                   │
+   Port metadata       Electrical connectivity
+   class / use         + port ordering
+```
+
+Using all three views provides a more complete representation of the standard cell than relying on GDS alone.
+
+---
+
+## Issue Encountered — Ambiguous Port Selection
+
+One practical issue I encountered was selecting individual labels from the physical layout.
+
+With exactly one label selected:
 
 ```tcl
 port index
 ```
 
-from the layout, I found that Magic requires exactly one label to be selected.
+successfully returned the associated port number.
 
-For locations containing multiple or overlapping labels, Magic reported:
+With multiple labels under the cursor:
+
+```tcl
+port index
+```
+
+failed with:
 
 ```text
 Exactly one label may be present under the cursor box.
+Use "port <name> ..." to specify a unique port.
 ```
 
-Instead of relying only on graphical selection, I used indexed port queries:
+I resolved this by using explicit/indexed port queries such as:
 
 ```tcl
 port first
@@ -386,71 +448,70 @@ port 1 class
 port 1 use
 ```
 
-This provided a more reliable way to inspect individual port properties.
+instead of depending entirely on graphical label selection.
 
 ---
 
 ## Key Commands
 
+### Inspecting ports
+
 ```tcl
 port index
-
 port first
 port 1 name
 port 1 class
 port 1 use
 ```
 
-LEF annotation:
+### Reading LEF metadata
 
 ```tcl
 lef read /usr/share/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef
 ```
 
-SPICE metadata annotation:
-
-```tcl
-readspice /usr/share/pdk/sky130A/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
-```
-
-Vendor SPICE inspection:
+### Inspecting vendor SPICE
 
 ```bash
 cd /usr/share/pdk/sky130A/libs.ref/sky130_fd_sc_hd/spice
 vi sky130_fd_sc_hd.spice
 ```
 
+The SPICE library was then used with the available `readspice` Tcl procedure to annotate the loaded cells with the vendor port ordering.
+
 ---
 
 ## Key Learnings
 
-- Queried physical-layout ports directly in Magic.
-- Used `port first` and indexed queries to inspect port properties.
-- Identified that GDS alone does not preserve all required port metadata.
-- Compared Magic's automatically assigned port ordering against the vendor SPICE definition.
-- Verified the authoritative `AND2_1` subcircuit terminal order from the SKY130 SPICE library.
-- Used LEF to annotate existing detailed layouts with additional port metadata.
-- Observed port `use` and `class` information after LEF annotation.
-- Used SPICE-based annotation to restore the vendor-defined port ordering.
-- Understood why GDS, LEF, and SPICE/CDL complement each other in a physical-verification flow.
+- Inspected ports directly from a SKY130 standard-cell layout in Magic.
+- Used `port index` to determine the index of a single selected port.
+- Observed that `port index` becomes ambiguous when multiple labels are selected.
+- Used indexed port queries as a more reliable method of inspecting port information.
+- Compared Magic's initial port assignment against the vendor SPICE definition.
+- Verified the authoritative `AND2_1` terminal ordering from the SKY130 SPICE library.
+- Used LEF to recover additional port metadata such as `use` and `class`.
+- Used SPICE-based annotation to recover the vendor-defined port ordering.
+- Verified that port 1 became `A`, matching the vendor `.subckt`.
+- Understood how GDS, LEF, and SPICE provide complementary views of the same standard cell.
 
 ---
 
 ## Result
 
-The imported SKY130 `AND2_1` layout was successfully augmented with metadata from the vendor LEF and SPICE representations.
+The SKY130 `AND2_1` layout was successfully augmented with metadata from the vendor LEF and SPICE representations.
 
 ```text
-GDS geometry loaded             ✓
-Physical ports inspected        ✓
-Initial port order checked      ✓
-Vendor SPICE order verified     ✓
-LEF metadata annotated          ✓
-Port use/class recovered        ✓
-SPICE port order annotated      ✓
-Port 1 verified as A            ✓
+GDS layout loaded                 ✓
+Single port index queried         ✓
+Ambiguous selection identified    ✓
+Vendor SPICE inspected            ✓
+Vendor port order established     ✓
+LEF metadata annotated            ✓
+Port class/use recovered          ✓
+SPICE port ordering annotated     ✓
+Port 1 verified as A              ✓
 ```
 
-The lab demonstrated that a complete standard-cell representation cannot always be reconstructed from GDS geometry alone; the accompanying LEF and SPICE/CDL views provide additional metadata required for downstream extraction and hierarchical verification.
+The lab demonstrated why physical geometry alone is not sufficient to reconstruct all of the interface information required for a standard cell and how the GDS, LEF, and SPICE library views work together to provide that information.
 
-The next lab explores **abstract views** and how LEF representations are used when the complete detailed layout is not required.
+The next lab explores **abstract views**.
