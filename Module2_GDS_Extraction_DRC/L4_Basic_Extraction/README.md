@@ -2,9 +2,9 @@
 
 ## Overview
 
-In this lab, I explored the extraction flow in Magic using the SKY130 standard-cell layout.
+In this lab, I explored the extraction flow in Magic using a SKY130 standard-cell layout.
 
-The objective was to move from a physical layout representation to progressively more detailed electrical netlists:
+The goal was to move from the physical layout to progressively more detailed electrical representations:
 
 1. Basic extracted connectivity
 2. LVS-oriented SPICE netlist
@@ -12,7 +12,7 @@ The objective was to move from a physical layout representation to progressively
 4. Resistance extraction
 5. Final RC-aware SPICE netlist
 
-The lab demonstrated how the same physical layout can be converted into different levels of electrical abstraction depending on whether the goal is LVS comparison or detailed post-layout simulation.
+This lab demonstrated that the same physical layout can be extracted differently depending on whether the objective is **LVS verification** or **post-layout electrical simulation**.
 
 The overall flow was:
 
@@ -34,13 +34,15 @@ Extract Interconnect Resistance
 .res.ext Resistance Data
         ↓
 Generate Final RC SPICE Netlist
+        ↓
+Inspect Extracted R + C Network
 ```
 
 ---
 
-## 1. Extracting the Layout
+## 1. Basic Layout Extraction
 
-I loaded the SKY130 standard cell used in the previous exercises and performed extraction using:
+I loaded the SKY130 standard cell used in the previous exercises and extracted its electrical connectivity using:
 
 ```tcl
 extract all
@@ -52,7 +54,7 @@ Magic generated an intermediate extraction file:
 sky130_fd_sc_hd__and2_1.ext
 ```
 
-I then configured the SPICE conversion for LVS and generated the netlist:
+I then configured the SPICE output for LVS and generated the netlist:
 
 ```tcl
 ext2spice lvs
@@ -61,20 +63,20 @@ ext2spice
 
 ![Basic layout extraction](images/01_basic_layout_extraction.png)
 
-After extraction, the working directory contained both:
+The working directory now contained:
 
 ```text
 sky130_fd_sc_hd__and2_1.ext
 sky130_fd_sc_hd__and2_1.spice
 ```
 
-The `.ext` file is Magic's intermediate extracted representation, while the `.spice` file is the electrical netlist used by downstream tools.
+The `.ext` file is Magic's intermediate extracted representation, while the `.spice` file is the electrical netlist generated from it.
 
 ---
 
 ## 2. LVS-Oriented SPICE Netlist
 
-I inspected the generated SPICE file:
+I inspected the generated SPICE file using:
 
 ```bash
 vi sky130_fd_sc_hd__and2_1.spice
@@ -82,17 +84,15 @@ vi sky130_fd_sc_hd__and2_1.spice
 
 ![LVS extracted SPICE netlist](images/02_lvs_extracted_spice_netlist.png)
 
-The extracted netlist contained the standard-cell subcircuit and the recognized transistor instances.
-
-The top-level definition retained the port information:
+The extracted subcircuit retained the standard-cell port order:
 
 ```spice
 .subckt sky130_fd_sc_hd__and2_1 A B VGND VNB VPB VPWR X
 ```
 
-The extracted device network contained six transistor subcircuit calls.
+The netlist contained six transistor subcircuit instances corresponding to the devices recognized from the physical layout.
 
-This LVS-oriented version primarily represents:
+At this stage, the main information represented was:
 
 ```text
 Devices
@@ -100,21 +100,15 @@ Devices
 Electrical connectivity
 ```
 
-without including the detailed parasitic RC network.
+without detailed parasitic RC components.
 
-This makes it appropriate for schematic-vs-layout comparison.
+This type of netlist is suitable for **Layout Versus Schematic (LVS)** comparison.
 
 ---
 
 ## 3. Adding Parasitic Capacitance
 
-The extraction database already contained capacitance information, but the earlier:
-
-```tcl
-ext2spice lvs
-```
-
-configuration did not include those parasitics in the SPICE output.
+The extraction database already contained capacitance information, but the LVS-oriented output did not include it in the SPICE netlist.
 
 To include all extracted capacitances, I used:
 
@@ -131,31 +125,26 @@ With:
 cthresh = 0
 ```
 
-Magic included all extracted capacitances, including extremely small values.
+Magic included all extracted parasitic capacitances.
 
-The SPICE netlist now contained lines beginning with:
-
-```text
-C
-```
-
-such as:
+The SPICE file now contained entries beginning with:
 
 ```text
-C0 ...
-C1 ...
-C2 ...
+C0
+C1
+C2
+...
 ```
 
-These represent layout-derived parasitic capacitances between physical nets.
+representing capacitance between physical nets in the layout.
 
 ---
 
 ## 4. Applying a Capacitance Threshold
 
-Some extracted capacitances were extremely small and rounded close to zero.
+Some extracted capacitances were extremely small and rounded very close to zero.
 
-To remove insignificant values, I changed the capacitance threshold to:
+To remove insignificant values, I changed the threshold to:
 
 ```tcl
 ext2spice cthresh 0.01
@@ -164,29 +153,27 @@ ext2spice
 
 ![Capacitance threshold](images/04_capacitance_threshold.png)
 
-The resulting netlist retained only capacitances above the selected threshold.
-
-Conceptually:
+The behavior can be summarized as:
 
 ```text
 cthresh 0
     ↓
-Include every extracted capacitance
+Include all extracted capacitances
 
 cthresh 0.01
     ↓
-Remove very small capacitances
+Exclude very small capacitances
 ```
 
-This produces a cleaner parasitic netlist while keeping the more relevant capacitive effects.
+This creates a cleaner parasitic netlist while retaining the more relevant capacitive effects.
 
 ---
 
 ## 5. Preparing Data for Resistance Extraction
 
-Parasitic resistance extraction requires additional connectivity information.
+Resistance extraction requires additional intermediate connectivity information.
 
-I generated the intermediate simulation data using:
+I generated this using:
 
 ```tcl
 ext2sim labels on
@@ -195,16 +182,14 @@ ext2sim
 
 ![ext2sim intermediate files](images/05_ext2sim_intermediate_files.png)
 
-This created additional files including:
+This generated files including:
 
 ```text
 sky130_fd_sc_hd__and2_1.nodes
 sky130_fd_sc_hd__and2_1.sim
 ```
 
-These files provide intermediate network information used by the resistance-extraction flow.
-
-The `.sim` representation can also be associated with switch-level simulation flows, while here it serves as part of the extraction pipeline.
+These files contain intermediate network information used by the resistance-extraction flow.
 
 ---
 
@@ -224,19 +209,17 @@ extresist
 
 ![Resistance extraction](images/06_resistance_extraction.png)
 
-The tolerance controls when a network is detailed enough to require replacement with a distributed resistance representation.
+The tolerance determines when an extracted net should be replaced with a distributed resistance network.
 
-A value of:
+For this exercise, I used:
 
 ```text
 10
 ```
 
-was used in this exercise.
+Magic identified the circuit ports and generated drive points for the extracted networks.
 
-During extraction, Magic identified ports and created drive points for the corresponding nets.
-
-The output reported information such as:
+The console reported information such as:
 
 ```text
 Total Nets
@@ -244,13 +227,13 @@ Nets extracted
 Nets output
 ```
 
-showing how many networks were analyzed and how many were converted into resistance networks.
+showing how many nets were analyzed and how many were converted into resistance networks.
 
 ---
 
-## 7. Resistance Extraction Output
+## 7. Resistance Extraction Output File
 
-After running `extresist`, a new file appeared in the working directory:
+After running `extresist`, a new file appeared:
 
 ```text
 sky130_fd_sc_hd__and2_1.res.ext
@@ -258,27 +241,27 @@ sky130_fd_sc_hd__and2_1.res.ext
 
 ![Resistance extraction file](images/07_resistance_extraction_file.png)
 
-This file does not replace the original `.ext` database.
+This file contains resistance information associated with the original extraction database.
 
-Instead, it contains the resistance information required to modify selected extracted networks when the final SPICE netlist is generated.
-
-The extraction flow therefore becomes:
+The flow now becomes:
 
 ```text
 Original .ext
-     +
+      +
 .res.ext
-     ↓
+      ↓
 ext2spice
-     ↓
-RC-aware SPICE netlist
+      ↓
+Final RC-aware SPICE netlist
 ```
+
+The `.res.ext` file is therefore used to augment the original extraction data with distributed interconnect resistance.
 
 ---
 
-## 8. Generating the Final RC-Aware Netlist
+## 8. Generating the Final RC-Aware SPICE Netlist
 
-For the final extraction, I configured `ext2spice` with:
+I configured the final SPICE extraction using:
 
 ```tcl
 ext2spice lvs
@@ -295,9 +278,9 @@ The important additional option was:
 ext2spice extresist on
 ```
 
-which instructs the SPICE converter to incorporate the resistance-extraction data into the output netlist.
+which instructs Magic to include the resistance-extraction data in the generated SPICE netlist.
 
-The final SPICE file therefore contains:
+The final netlist therefore includes:
 
 ```text
 Transistor devices
@@ -307,21 +290,119 @@ Parasitic capacitances
 Parasitic resistances
 ```
 
-This is a much more physically realistic representation of the layout than the original LVS-only netlist.
+This is a more physically realistic representation of the implemented standard cell.
 
 ---
 
-## Extraction Levels Compared
+## 9. Inspecting the Final RC-Extracted SPICE Netlist
 
-The lab produced several increasingly detailed circuit representations.
+After generating the RC-aware netlist, I inspected the final SPICE file.
 
-| Extraction Level | Devices | Capacitance | Resistance | Main Use |
+![Final RC extracted SPICE netlist](images/09_final_rc_extracted_netlist.png)
+
+The final netlist now clearly contained three major element groups.
+
+### Device Instances
+
+Lines beginning with:
+
+```text
+X
+```
+
+represent the extracted transistor/device instances.
+
+For example:
+
+```spice
+X0 ...
+X1 ...
+X2 ...
+```
+
+These correspond to the MOS devices recognized from the physical layout.
+
+### Parasitic Resistances
+
+Lines beginning with:
+
+```text
+R
+```
+
+represent distributed interconnect resistance.
+
+Examples included entries such as:
+
+```spice
+R0 B.n0 B.t0 ...
+R1 B.n0 B.t1 ...
+R3 VPWR.n0 VPWR.t1 ...
+R8 X X.t1 ...
+```
+
+The original ideal nets were divided into internal nodes such as:
+
+```text
+B.n0
+B.t0
+B.t1
+VPWR.n0
+VPWR.t0
+X.n1
+X.t1
+```
+
+This represents the physical interconnect as a distributed resistive network instead of one ideal zero-resistance node.
+
+### Parasitic Capacitances
+
+The same netlist also contained:
+
+```text
+C0
+C1
+C2
+...
+```
+
+for the extracted parasitic capacitances.
+
+Examples included coupling between nets such as:
+
+```text
+A ↔ X
+B ↔ X
+A ↔ VPWR
+VGND ↔ A
+X ↔ VPWR
+```
+
+The final extracted representation therefore contains:
+
+```text
+Devices
++
+Distributed R
++
+Parasitic C
+```
+
+which is suitable for more realistic post-layout simulation.
+
+---
+
+## 10. Extraction Levels Compared
+
+This lab generated several progressively more detailed representations of the same layout.
+
+| Extraction Level | Devices | Parasitic C | Parasitic R | Main Purpose |
 |---|---:|---:|---:|---|
-| LVS netlist | ✓ | — | — | Layout vs. schematic comparison |
+| LVS netlist | ✓ | — | — | Connectivity verification |
 | Capacitive netlist | ✓ | ✓ | — | Post-layout simulation |
-| RC netlist | ✓ | ✓ | ✓ | Detailed post-layout analysis |
+| RC-aware netlist | ✓ | ✓ | ✓ | More detailed post-layout analysis |
 
-The progression can be represented as:
+The progression can be visualized as:
 
 ```text
 Ideal Connectivity
@@ -337,19 +418,17 @@ More realistic physical behavior
 
 ---
 
-## Understanding the Extracted Resistance Network
+## 11. Understanding the Distributed RC Network
 
-Resistance extraction breaks a physical conductor into a distributed network instead of treating an entire wire as one ideal node.
-
-Conceptually:
+In the ideal schematic, a wire is treated as one electrical node:
 
 ```text
-Ideal wire:
-
 A ───────────────── OUT
 ```
 
-becomes something closer to:
+But a physical interconnect has resistance and capacitance.
+
+The extracted representation is closer to:
 
 ```text
 A ─R1─●─R2─●─R3─ OUT
@@ -359,95 +438,127 @@ A ─R1─●─R2─●─R3─ OUT
      GND   GND
 ```
 
-This is important because real interconnect has both:
+The resistor network captures voltage drop and distributed interconnect behavior, while the capacitances represent coupling and loading caused by the physical geometry.
+
+---
+
+## 12. Internal Node Naming
+
+Resistance extraction introduces additional internal node names.
+
+Examples from the extracted netlist included:
 
 ```text
-Resistance
-Capacitance
+B.n0
+B.t0
+VPWR.n0
+VPWR.t1
+X.n1
+X.t1
+A.n0
+A.t0
 ```
 
-which affect delay and waveform shape.
+These internal nodes allow the original physical network to be represented as multiple resistor segments.
+
+The detailed extracted network is therefore substantially larger than the original ideal schematic netlist.
 
 ---
 
-## Extracted Internal Node Naming
+## 13. Why RC Extraction Matters
 
-The detailed resistance network creates additional internal nodes.
-
-The extraction process distinguishes locations such as:
-
-- branch points in a network
-- wire termination points
-- device connection points
-
-These additional nodes allow the original physical interconnect to be represented as a distributed electrical network rather than as one ideal connection.
-
-As the extracted representation becomes more detailed, the SPICE netlist becomes considerably larger.
-
----
-
-## Why RC Extraction Matters
-
-The schematic assumes wires are ideal:
+An ideal schematic generally assumes:
 
 ```text
 Rwire = 0
 Cwire = 0
 ```
 
-The physical layout does not behave this way.
-
-Real interconnect introduces:
+Real physical interconnect introduces:
 
 ```text
-Metal resistance
+Metal / poly resistance
 +
-Coupling capacitance
+Capacitance to neighboring nets
 +
-Capacitance to surrounding structures
+Capacitance to substrate
 ```
 
-These parasitics can affect:
+These parasitic effects can influence:
 
 - propagation delay
-- rise/fall time
-- switching behavior
+- rise and fall times
 - analog settling
+- signal integrity
+- transient response
 - timing accuracy
 
-Therefore, RC-aware extraction allows simulation to better represent the manufactured circuit.
+Therefore, RC-aware extraction provides a much better representation of the manufactured circuit than the schematic alone.
 
 ---
 
-## LVS vs. Post-Layout Extraction
+## 14. LVS Extraction vs. Post-Layout Extraction
 
-An important distinction from this lab is:
+An important distinction from this lab is the purpose of each extraction mode.
 
-### LVS extraction
+### LVS-Oriented Extraction
 
-The objective is primarily connectivity verification.
+For LVS, the main concern is:
+
+```text
+Are the devices and connections in the layout
+electrically equivalent to the schematic?
+```
+
+The flow is:
 
 ```text
 Layout
- ↓
-Devices + nets
- ↓
-Compare against schematic
+  ↓
+Devices + Connectivity
+  ↓
+LVS Comparison
 ```
 
-### Post-layout extraction
+### Post-Layout Extraction
 
-The objective is circuit behavior including physical parasitics.
+For post-layout simulation, the physical parasitics are also important:
 
 ```text
 Layout
- ↓
-Devices + nets + parasitic C + parasitic R
- ↓
-SPICE simulation
+  ↓
+Devices
++ Resistance
++ Capacitance
+  ↓
+SPICE Simulation
 ```
 
-The same layout can therefore produce different netlists depending on the verification goal.
+The same physical layout can therefore produce different netlists depending on the intended verification task.
+
+---
+
+## Generated Files
+
+During this lab, the extraction flow generated:
+
+```text
+sky130_fd_sc_hd__and2_1.ext
+sky130_fd_sc_hd__and2_1.spice
+sky130_fd_sc_hd__and2_1.nodes
+sky130_fd_sc_hd__and2_1.sim
+sky130_fd_sc_hd__and2_1.res.ext
+```
+
+Their roles are:
+
+| File | Purpose |
+|---|---|
+| `.ext` | Magic's extracted electrical database |
+| `.spice` | SPICE netlist generated from extraction |
+| `.nodes` | Extracted node information |
+| `.sim` | Intermediate simulation/extraction representation |
+| `.res.ext` | Resistance extraction information |
 
 ---
 
@@ -459,7 +570,7 @@ The same layout can therefore produce different netlists depending on the verifi
 extract all
 ```
 
-### LVS SPICE Netlist
+### LVS-Oriented SPICE
 
 ```tcl
 ext2spice lvs
@@ -480,7 +591,7 @@ ext2spice cthresh 0.01
 ext2spice
 ```
 
-### Generate Intermediate Simulation Data
+### Generate Intermediate Data
 
 ```tcl
 ext2sim labels on
@@ -494,7 +605,7 @@ extresist tolerance 10
 extresist
 ```
 
-### Final RC SPICE Netlist
+### Generate Final RC Netlist
 
 ```tcl
 ext2spice lvs
@@ -505,43 +616,21 @@ ext2spice
 
 ---
 
-## Generated Files
-
-During the extraction flow I generated several representations:
-
-```text
-sky130_fd_sc_hd__and2_1.ext
-sky130_fd_sc_hd__and2_1.spice
-sky130_fd_sc_hd__and2_1.nodes
-sky130_fd_sc_hd__and2_1.sim
-sky130_fd_sc_hd__and2_1.res.ext
-```
-
-Their roles can be summarized as:
-
-| File | Purpose |
-|---|---|
-| `.ext` | Magic extracted circuit database |
-| `.spice` | SPICE netlist |
-| `.nodes` | Extracted-node information |
-| `.sim` | Intermediate simulation/extraction representation |
-| `.res.ext` | Distributed resistance extraction information |
-
----
-
 ## Key Learnings
 
-- Extracted electrical connectivity directly from a SKY130 physical layout.
-- Converted Magic `.ext` extraction data into a SPICE netlist.
-- Generated an LVS-oriented netlist without parasitic RC detail.
-- Added layout-derived parasitic capacitance using `ext2spice`.
-- Used `cthresh` to remove insignificant extracted capacitances.
-- Generated `.nodes` and `.sim` intermediate extraction files.
-- Performed distributed interconnect resistance extraction with `extresist`.
-- Generated a `.res.ext` resistance representation.
-- Incorporated resistance data into the final SPICE netlist.
-- Understood the difference between LVS extraction and post-layout RC extraction.
-- Connected physical interconnect geometry with its equivalent electrical RC network.
+- Extracted electrical connectivity from a SKY130 standard-cell layout.
+- Generated Magic `.ext` extraction data.
+- Converted the extracted layout into a SPICE netlist.
+- Generated an LVS-oriented representation containing devices and connectivity.
+- Added layout-derived parasitic capacitance.
+- Applied a capacitance threshold to remove insignificant values.
+- Generated `.nodes` and `.sim` intermediate extraction data.
+- Performed distributed resistance extraction using `extresist`.
+- Generated a `.res.ext` file containing resistance information.
+- Integrated extracted resistance into the final SPICE netlist.
+- Inspected the final resistor and capacitor networks directly.
+- Understood how ideal nets become distributed RC networks after extraction.
+- Distinguished LVS extraction from detailed post-layout extraction.
 
 ---
 
@@ -551,32 +640,33 @@ Their roles can be summarized as:
 Layout extraction completed          ✓
 .ext database generated              ✓
 LVS SPICE netlist generated          ✓
-Device connectivity verified         ✓
+Device connectivity extracted        ✓
 Parasitic capacitances extracted     ✓
 Capacitance threshold applied        ✓
-ext2sim data generated               ✓
+ext2sim intermediate files created   ✓
 Resistance extraction completed      ✓
-.res.ext generated                   ✓
+.res.ext file generated              ✓
 RC-aware SPICE netlist generated     ✓
+Final R/C network inspected          ✓
 ```
 
-The lab demonstrated the complete progression from a physical SKY130 standard-cell layout to an electrical netlist containing devices and layout-derived parasitic RC information.
+The lab demonstrated the complete progression from a physical SKY130 layout to an electrical SPICE representation containing device connectivity and layout-derived parasitic resistance and capacitance.
 
 ---
 
 ## Suggested Follow-Up
 
-A useful next experiment is to simulate the same cell using three different representations:
+A useful follow-up experiment is to simulate the same logic cell with three different netlists:
 
 ```text
-1. LVS / ideal extracted netlist
+1. Ideal / LVS extracted netlist
 
-2. Extracted netlist
+2. Device netlist
    + parasitic capacitance
 
-3. Extracted netlist
+3. Device netlist
    + parasitic capacitance
    + parasitic resistance
 ```
 
-Comparing the transient outputs would show directly how physical-layout parasitics affect circuit timing and waveform behavior.
+Comparing the transient waveforms from these three representations would directly show the effect of physical-layout parasitics on circuit delay and waveform behavior.
