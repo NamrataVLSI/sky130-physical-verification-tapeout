@@ -1,140 +1,164 @@
-# L1 — Width Rule and Spacing Rule
+# L1 — Lab for Width Rule and Spacing Rule
 
 ## Overview
 
-In this lab, I started working with **SKY130 design rules in Magic** and practiced identifying and correcting two fundamental layout violations:
+In this lab, I worked with **SKY130 Design Rule Checking (DRC)** in Magic and investigated two fundamental physical layout rules:
 
-- Minimum width rule
-- Minimum spacing rule
+- **Minimum Width Rule**
+- **Minimum Spacing Rule**
 
-The main goal was to understand how Magic reports DRC violations, how the corresponding geometry can be measured, and how modifying the layout removes the violation.
+The objective was to understand how Magic identifies a DRC violation, how the violated geometry can be measured, and how the layout can be modified to satisfy the corresponding SKY130 design rule.
+
+The basic workflow followed in this lab was:
+
+```text
+Launch SKY130 DRC Lab
+        ↓
+Load DRC Exercise
+        ↓
+Identify DRC Violation
+        ↓
+Query the Violated Rule
+        ↓
+Measure the Geometry
+        ↓
+Modify the Layout
+        ↓
+Recheck DRC
+        ↓
+Confirm Error is Removed
+```
 
 ---
 
-## Lab Setup
+## 1. DRC Lab Setup
 
-I first cloned the DRC lab repository:
+I first cloned the DRC exercise repository:
 
 ```bash
 git clone https://github.com/RTimothyEdwards/vsd_drc_lab.git
 ```
 
-Then entered the lab directory:
+Then I entered the repository:
 
 ```bash
 cd vsd_drc_lab
 ```
 
-and launched Magic using:
+and launched Magic using the provided script:
 
 ```bash
 ./run_magic
 ```
 
-Magic started with the **SKY130A technology** loaded.
+Magic launched with the **SKY130A technology** loaded, allowing the SKY130 design rules to be checked interactively.
 
-![DRC lab setup](images/01_drc_lab_setup.png)
+![DRC Lab Setup](images/01_drc_lab_setup.png)
 
 ---
 
-## Exercise Layout
+## 2. Exercise Layout
 
-The provided layout contains several intentionally created DRC violations.
+The first exercise contains several intentionally created layout-rule violations.
 
-For this lab, I focused on:
+The layout includes examples for:
 
 ```text
-Exercise_1a → Width rule
-Exercise_1b → Spacing rule
+Exercise_1a → Width Rule
+Exercise_1b → Spacing Rule
+Exercise_1c → Wide Spacing Rule
+Exercise_1d → Notch Rule
 ```
 
-The remaining exercises for wide-spacing and notch rules are covered separately in L2.
+For this lab, I focused specifically on **Exercise_1a** and **Exercise_1b**.
 
-![Exercise overview](images/02_exercise1_overview.png)
+The wide-spacing and notch-rule exercises are documented separately in L2.
+
+![Exercise 1 Overview](images/02_exercise1_overview.png)
 
 ---
 
-# Minimum Width Rule
+# 3. Minimum Width Rule
 
-## Initial Violation
+## Initial Width Violation
 
 I started with **Exercise_1a — Width_rule**.
 
-The Metal2 geometry was intentionally drawn narrower than the minimum width allowed by the SKY130 design rules.
+The Metal2 geometry was intentionally created with a width smaller than the minimum allowed value.
 
-![Initial width violation](images/03_width_rule_initial_error.png)
+After selecting the region and checking the DRC error, Magic identified a Metal2 width violation.
 
-After querying the DRC violation, Magic reported:
+![Width Rule Violation](images/03_width_rule_violation.png)
+
+The reported rule was:
 
 ```text
 Metal2 width < 0.14um (met2.1)
 ```
 
-![Width DRC report](images/04_width_rule_drc_report.png)
+![Width Rule Report](images/04_width_rule_report.png)
 
-This means that the Metal2 shape must have a minimum width of:
+This indicates that the Metal2 geometry must have a minimum width of:
 
 ```text
 0.14 µm
 ```
 
-The original geometry did not satisfy this requirement.
-
----
-
-## Measuring the Geometry
-
-I used the Magic box to inspect the dimensions of the Metal2 shape.
-
-The measurement allowed me to compare the actual width against the required minimum:
+Therefore:
 
 ```text
-Required Metal2 width = 0.14 µm
-```
-
-The basic check is:
-
-```text
-Actual width < 0.14 µm
-          ↓
-      DRC violation
+Metal2 width < 0.14 µm
+            ↓
+       DRC Violation
 ```
 
 ---
 
-## Correcting the Width
+## 4. Correcting the Width Rule
 
-I modified the Metal2 geometry until its width satisfied the minimum requirement.
+I measured the geometry using Magic's box dimensions and modified the Metal2 shape so that its width satisfied the minimum requirement.
 
-![Width measurement and correction](images/06_width_rule_measurement.png)
+The objective was:
 
-After correcting the geometry and checking the layout again, Magic reported:
+```text
+Metal2 width ≥ 0.14 µm
+```
+
+After modifying the geometry and checking the DRC again, Magic reported:
 
 ```text
 No errors found.
 ```
 
-![Width rule fixed](images/05_width_rule_fixed.png)
+![Width Rule Fixed](images/05_width_rule_fixed.png)
 
-Therefore:
+I then confirmed the corrected Metal2 geometry and its dimensions.
+
+![Width Rule Correction](images/06_width_rule_correction.png)
+
+The result can be summarized as:
 
 ```text
-Width < 0.14 µm   → DRC violation
+Width < 0.14 µm
+       ↓
+   DRC Error
 
-Width ≥ 0.14 µm   → Rule satisfied
+       ↓ Correct geometry
+
+Width ≥ 0.14 µm
+       ↓
+   Rule Satisfied
 ```
 
-This demonstrated how Magic's interactive DRC responds directly to geometry changes.
+This exercise demonstrated how Magic's interactive DRC responds directly to changes in layout geometry.
 
 ---
 
-# Minimum Spacing Rule
-
-## Initial Violation
+# 5. Minimum Spacing Rule
 
 Next, I worked on **Exercise_1b — Spacing_rule**.
 
-This exercise contains two Metal1 geometries placed closer together than the minimum permitted spacing.
+This exercise contains Metal1 geometries placed closer together than the minimum permitted spacing.
 
 Magic reported:
 
@@ -142,131 +166,187 @@ Magic reported:
 Metal1 spacing < 0.14um (met1.2)
 ```
 
-![Spacing rule error](images/07_spacing_rule_error.png)
+![Spacing Rule Violation](images/07_spacing_rule_violation.png)
 
-Unlike the width rule, which checks the dimension of a single shape, the spacing rule checks the separation between two shapes.
+The spacing rule checks the distance between two separate geometries.
 
 Conceptually:
 
 ```text
-Metal1                Metal1
-██████                ██████
-       <------------>
-           spacing
+Metal1                  Metal1
+
+██████                  ██████
+       <-------------->
+
+           Spacing
 ```
 
-If the spacing is smaller than the required value, Magic reports a DRC violation.
+If:
+
+```text
+Spacing < 0.14 µm
+```
+
+the geometries violate the SKY130 Metal1 spacing rule.
 
 ---
 
-## Correcting the Spacing
+# 6. Correcting the Spacing Rule
 
-I selected one of the Metal1 geometries and moved it farther away from the other geometry.
+To correct the violation, I selected one of the Metal1 shapes and moved it away from the neighboring geometry.
 
-![Spacing rule edit](images/08_spacing_rule_edit.png)
+I used the Magic command:
 
-The required minimum spacing was:
-
-```text
-0.14 µm
+```tcl
+move e 0.14um
 ```
 
-Therefore:
+where:
+
+```text
+move       → Move the selected geometry
+e          → Move toward the east/right direction
+0.14um     → Distance by which the geometry is moved
+```
+
+![Spacing Rule Move Command](images/08_spacing_rule_move_command.png)
+
+This increased the separation between the Metal1 shapes.
+
+The objective was to satisfy:
+
+```text
+Metal1 spacing ≥ 0.14 µm
+```
+
+After correcting the geometry, the spacing-rule violation was removed.
+
+![Spacing Rule Fixed](images/09_spacing_rule_fixed.png)
+
+The correction can therefore be represented as:
 
 ```text
 Spacing < 0.14 µm
         ↓
-    DRC violation
-```
+    DRC Error
 
-After increasing the separation:
+        ↓ move geometry
 
-```text
 Spacing ≥ 0.14 µm
         ↓
-    Rule satisfied
+   Rule Satisfied
 ```
-
-![Spacing rule fixed](images/09_spacing_rule_fixed.png)
 
 ---
 
-# Width vs. Spacing Rule
+# 7. Width Rule vs. Spacing Rule
 
-| Rule | What is checked | Violation observed |
-|---|---|---|
-| Width rule | Width of one geometry | Metal2 width `< 0.14 µm` |
-| Spacing rule | Distance between two geometries | Metal1 spacing `< 0.14 µm` |
+| Rule | What is Checked | Layer Used in Exercise | Requirement |
+|---|---|---|---|
+| Minimum Width | Width of an individual geometry | Metal2 | ≥ 0.14 µm |
+| Minimum Spacing | Separation between neighboring geometries | Metal1 | ≥ 0.14 µm |
 
-This exercise helped distinguish two of the most fundamental physical layout constraints:
+The difference can be visualized as:
 
 ```text
-WIDTH
-<------>
+WIDTH RULE
 
-████████
+   <---- width ---->
+
+       ███████
 
 
-SPACING
+SPACING RULE
 
-████       ████
-     <--->
+██████              ██████
+       <--- gap --->
 ```
 
-Width controls the minimum size of an individual shape, while spacing controls the minimum separation between neighboring shapes.
+The **width rule** controls the minimum dimension of a single layout shape, while the **spacing rule** controls how close two geometries are allowed to be.
 
 ---
 
-# DRC Debugging Flow
+# 8. DRC Debugging Flow Practiced
 
-The workflow I practiced in this lab was:
+The practical debugging flow I followed was:
 
 ```text
-Load layout
-     ↓
-Locate DRC violation
-     ↓
-Query the violated rule
-     ↓
-Identify the affected layer
-     ↓
-Measure the geometry
-     ↓
-Modify the layout
-     ↓
+Locate DRC Marker
+       ↓
+Select the Error Region
+       ↓
+Query the DRC Rule
+       ↓
+Identify Layer + Rule
+       ↓
+Measure Geometry
+       ↓
+Modify Geometry
+       ↓
 Recheck DRC
-     ↓
-Confirm violation is removed
+       ↓
+Verify Error Removal
 ```
 
----
+This is an important layout-debugging workflow because the DRC message identifies both the physical layer and the geometric condition responsible for the violation.
 
-## Key Learnings
-
-- Set up and launched the SKY130 DRC lab environment.
-- Used Magic for interactive design-rule checking.
-- Identified a Metal2 minimum-width violation.
-- Interpreted the `met2.1` width-rule message.
-- Measured layout geometry using Magic.
-- Modified Metal2 geometry to satisfy the width rule.
-- Identified a Metal1 minimum-spacing violation.
-- Interpreted the `met1.2` spacing-rule message.
-- Adjusted geometry to satisfy minimum spacing.
-- Observed DRC errors disappear after correcting the layout.
-
----
-
-## Result
+For example:
 
 ```text
-SKY130 DRC environment setup       ✓
-Width-rule violation identified    ✓
-Width-rule requirement measured    ✓
-Width violation corrected          ✓
-Spacing-rule violation identified  ✓
-Spacing requirement measured       ✓
-Spacing violation corrected        ✓
-Interactive DRC verified           ✓
+Metal2 width < 0.14um (met2.1)
 ```
 
-This lab established the basic workflow for **identifying, understanding, measuring, and correcting geometric DRC violations in Magic using the SKY130 PDK**.
+can be interpreted as:
+
+```text
+Metal2
+   ↓
+Affected layer
+
+width
+   ↓
+Type of rule
+
+0.14um
+   ↓
+Minimum required value
+
+met2.1
+   ↓
+Rule identifier
+```
+
+---
+
+# Key Learnings
+
+- Set up and launched the SKY130 DRC lab environment in Magic.
+- Used Magic's interactive DRC capability.
+- Identified a **Metal2 minimum-width violation**.
+- Interpreted the `met2.1` DRC rule.
+- Used Magic's geometry measurements while debugging the layout.
+- Corrected the Metal2 width violation.
+- Identified a **Metal1 minimum-spacing violation**.
+- Interpreted the `met1.2` DRC rule.
+- Used the `move` command to modify layout geometry precisely.
+- Corrected the Metal1 spacing violation.
+- Verified that DRC errors disappeared after correcting the geometry.
+
+---
+
+# Result
+
+```text
+SKY130 DRC environment launched       ✓
+Exercise layout loaded                ✓
+Width violation identified            ✓
+Width rule interpreted                ✓
+Width geometry corrected              ✓
+Width DRC cleared                     ✓
+Spacing violation identified          ✓
+Spacing rule interpreted              ✓
+Geometry moved using Magic command    ✓
+Spacing DRC cleared                   ✓
+```
+
+This lab provided hands-on experience with the basic **width and spacing design rules** and established a practical workflow for identifying, understanding, and correcting DRC violations in Magic using the SKY130 PDK.
